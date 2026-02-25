@@ -1,0 +1,1251 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Water-AI Security — Syr Darya (Qyzylorda) MVP 5.1</title>
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    :root{
+      --bg:#0b1220; --card:#101a2f; --primary:#4db6ff; --accent:#00e5ff;
+      --text:#e7eefc; --muted:#9fb0d0; --danger:#ff4d6d; --warn:#ffcc00; --ok:#2ef0a3;
+      --radius:14px; --line:rgba(255,255,255,0.10); --shadow:0 8px 24px rgba(0,0,0,0.35);
+    }
+    body{
+      margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;
+      background:
+        radial-gradient(900px 500px at 20% -10%, rgba(77,182,255,0.22) 0%, rgba(77,182,255,0) 60%),
+        radial-gradient(900px 500px at 80% 0%, rgba(0,229,255,0.18) 0%, rgba(0,229,255,0) 55%),
+        var(--bg);
+      color:var(--text);
+    }
+    header{
+      background:linear-gradient(180deg, rgba(16,26,47,0.98), rgba(16,26,47,0.86));
+      border-bottom:1px solid var(--line);
+      padding:14px 18px; display:flex;justify-content:space-between;align-items:center;
+      position:sticky;top:0;z-index:1000; backdrop-filter: blur(10px);
+      gap:12px; flex-wrap:wrap;
+    }
+    h1{margin:0;font-size:18px;color:var(--primary);display:flex;align-items:center;gap:10px}
+    .subtitle{font-size:12px;color:var(--muted);font-weight:600}
+    .nav{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    .nav button{
+      background:transparent;border:1px solid var(--line);
+      padding:8px 12px;border-radius:12px; font-size:13px;font-weight:800;color:var(--muted);
+      cursor:pointer;transition:.18s;
+    }
+    .nav button.active{background:rgba(77,182,255,0.18);color:var(--text);border-color:rgba(77,182,255,0.35)}
+    .chip{
+      display:flex;align-items:center;gap:8px; padding:8px 10px;border-radius:12px;border:1px solid var(--line);
+      color:var(--muted);font-size:12px;font-weight:900; background:rgba(255,255,255,0.03); user-select:none; cursor:pointer;
+    }
+    .chip input{transform:scale(1.05)}
+    .chip .pill{padding:2px 8px;border-radius:999px;border:1px solid var(--line); font-size:11px;font-weight:900;color:var(--text); background:rgba(255,255,255,0.03)}
+    .langSel{
+      background:rgba(255,255,255,0.03); color:var(--text);
+      border:1px solid var(--line); border-radius:12px; padding:8px 10px;
+      font-weight:900; font-size:12px; cursor:pointer;
+    }
+
+    .toast-container { position: fixed; top: 80px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 10px; pointer-events:none; }
+    .toast { background: rgba(16,26,47,0.95); border-left: 4px solid var(--danger); padding: 12px 16px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); color: #fff; width: 280px; animation: slideIn 0.4s ease-out forwards; backdrop-filter: blur(5px); border-top: 1px solid var(--line); border-right: 1px solid var(--line); border-bottom: 1px solid var(--line);}
+    @keyframes slideIn { from{ transform: translateX(120%); opacity: 0;} to{ transform: translateX(0); opacity: 1;} }
+
+    .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 10000; justify-content: center; align-items: center; backdrop-filter: blur(5px); }
+    .modal-content { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 24px; width: 90%; max-width: 400px; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,0.5); }
+    .plan-card { background: rgba(255,255,255,0.03); border: 1px solid rgba(77,182,255,0.3); padding: 16px; border-radius: 12px; margin-top: 15px; cursor: pointer; transition: 0.2s; text-align: left;}
+    .plan-card:hover { background: rgba(77,182,255,0.1); transform: translateY(-2px); border-color: var(--primary); }
+    .plan-price { font-size: 20px; font-weight: 900; float: right; }
+
+    main{max-width:1400px;margin:16px auto;padding:0 18px;display:grid;grid-template-columns:12fr;gap:16px;}
+    .grid-row{display:grid;grid-template-columns:repeat(12,1fr);gap:16px;}
+    .col-8{grid-column:span 8;} .col-4{grid-column:span 4;} .col-12{grid-column:span 12;}
+    .card{
+      background:linear-gradient(180deg, rgba(16,26,47,0.92), rgba(16,26,47,0.82));
+      padding:16px;border-radius:var(--radius); box-shadow:var(--shadow); border:1px solid var(--line);
+    }
+    .card h2{margin:0 0 8px;font-size:15px}
+    .hint{font-size:12px;color:var(--muted);margin:0 0 10px;line-height:1.35}
+
+    .hero{
+      display:flex;align-items:center;justify-content:space-between;gap:14px;
+      padding:14px 16px;border-radius:16px;border:1px solid rgba(77,182,255,0.22);
+      background:
+        radial-gradient(500px 200px at 15% 0%, rgba(77,182,255,0.22), rgba(77,182,255,0)),
+        radial-gradient(500px 240px at 85% 0%, rgba(0,229,255,0.16), rgba(0,229,255,0)),
+        rgba(255,255,255,0.03);
+    }
+    .hero-left{display:flex;flex-direction:column;gap:8px}
+    .hero-title{font-size:16px;font-weight:900}
+    .hero-sub{font-size:12px;color:var(--muted);line-height:1.35}
+    .hero-badges{display:flex;gap:8px;flex-wrap:wrap; margin-top:5px;}
+    .badge{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;border:1px solid var(--line);font-size:12px;font-weight:900;background:rgba(255,255,255,0.02)}
+    .badge.ok{border-color:rgba(46,240,163,0.35)} .badge.warn{border-color:rgba(255,204,0,0.35)} .badge.dng{border-color:rgba(255,77,109,0.35)}
+    
+    .weather-widget {
+        background: rgba(0,0,0,0.3);
+        padding: 8px 12px;
+        border-radius: 12px;
+        border: 1px solid rgba(255,255,255,0.1);
+        display: flex;
+        gap: 15px;
+        align-items: center;
+        margin-right: 15px;
+    }
+    .w-temp { font-size: 20px; font-weight: 800; color: #fff; }
+    .w-details { display: flex; flex-direction: column; font-size: 10px; color: var(--muted); }
+
+    .hero-right{min-width:220px;border-left:1px dashed rgba(255,255,255,0.10);padding-left:14px;}
+    .mission{font-size:12px;color:var(--muted);line-height:1.35}
+    .mission b{color:var(--text)}
+    .mission .btn-mini{
+      margin-top:8px; display:inline-flex;gap:8px;align-items:center; padding:8px 10px;border-radius:12px;
+      border:1px solid rgba(77,182,255,0.35); background:rgba(77,182,255,0.16);
+      color:var(--text);font-weight:900;font-size:12px;cursor:pointer;
+    }
+
+    .kpi-row{display:flex;gap:12px;flex-wrap:wrap}
+    .kpi-card{
+      flex:1;min-width:190px;background:rgba(255,255,255,0.03);border:1px solid var(--line);
+      padding:12px;border-radius:var(--radius);display:flex;gap:12px;align-items:center
+    }
+    .kpi-icon{font-size:20px;background:rgba(77,182,255,0.12);width:46px;height:46px;display:flex;align-items:center;justify-content:center;border-radius:14px;border:1px solid rgba(77,182,255,0.22)}
+    .kpi-val{font-size:18px;font-weight:900;color:var(--text);line-height:1}
+    .kpi-lbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.6px;margin-top:4px}
+
+    #map{height:620px;border-radius:var(--radius);border:1px solid var(--line);overflow:hidden}
+
+    .map-label-icon { background: transparent; border: none; }
+    .map-label-text {
+        color: #fff; text-shadow: 0 0 4px #000, 0 0 3px #000;
+        font-weight: 800; font-size: 13px; white-space: nowrap;
+        background: rgba(0,0,0,0.6); padding: 2px 6px;
+        border-radius: 4px; border: 1px solid rgba(255,255,255,0.3);
+    }
+
+    .legend{
+      line-height:18px;color:var(--text); background:rgba(16,26,47,0.88);
+      padding:10px;border-radius:12px;border:1px solid var(--line); box-shadow:0 0 18px rgba(0,0,0,0.35);
+      font-size:12px;
+    }
+    .legend i{width:14px;height:14px;float:left;margin-right:8px;opacity:0.85;border-radius:4px}
+    
+    .leaflet-pane.riverPane { mix-blend-mode: screen; pointer-events: none; z-index: 390; }
+    .leaflet-pane.circlesPane { z-index: 410; pointer-events: auto; }
+
+    table{width:100%;border-collapse:collapse;font-size:12px}
+    th,td{padding:10px 8px;border-bottom:1px solid rgba(255,255,255,0.06);vertical-align:top}
+    th{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:0.6px;text-align:left}
+    .riskPill{display:inline-block;padding:2px 8px;border-radius:999px;font-weight:900;font-size:11px;border:1px solid var(--line)}
+
+    .panel{
+      position:absolute;top:92px;right:26px;z-index:999;
+      width:330px;max-width:calc(100% - 24px);
+      background:rgba(16,26,47,0.86); border:1px solid var(--line); border-radius:14px;
+      box-shadow:0 14px 35px rgba(0,0,0,0.45); padding:12px 12px; backdrop-filter: blur(10px);
+    }
+    .panel h3{margin:0 0 10px;font-size:12px;color:var(--text);letter-spacing:.3px}
+    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:9px}
+    .row label{display:flex;gap:8px;align-items:center;color:var(--muted);font-size:12px;font-weight:900}
+    .row input[type="range"]{width:100%}
+    .btn{flex:1;padding:9px 10px;border-radius:12px;background:rgba(77,182,255,0.20);border:1px solid rgba(77,182,255,0.35);color:var(--text);font-weight:900;font-size:12px;cursor:pointer}
+    .btn.secondary{background:rgba(255,255,255,0.02);border:1px solid var(--line);color:var(--muted)}
+    .mini{font-size:11px;color:var(--muted);line-height:1.35;margin-top:6px}
+
+    .zone-card{margin-top:12px;border-top:1px dashed rgba(255,255,255,0.10);padding-top:12px}
+    .zone-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
+    .zone-metric{border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:10px;background:rgba(255,255,255,0.02)}
+    .zone-metric b{display:block;font-size:12px; margin-bottom:4px;}
+    .zone-metric span{font-size:13px; font-weight:bold; color:var(--text)}
+    .actions{display:flex;gap:10px;margin-top:10px;flex-wrap:wrap}
+    .actions button{border:none;border-radius:12px;padding:9px 10px;font-size:12px;font-weight:900;cursor:pointer}
+    .a-warn{background:rgba(255,204,0,0.18);border:1px solid rgba(255,204,0,0.35);color:var(--text)}
+    .a-fix{background:rgba(0,229,255,0.14);border:1px solid rgba(0,229,255,0.35);color:var(--text)}
+    .a-exp{background:rgba(46,240,163,0.10);border:1px solid rgba(46,240,163,0.30);color:var(--text)}
+
+    .dss{display:flex;flex-direction:column;gap:10px;margin-top:10px}
+    .dssItem{border:1px solid var(--line);border-radius:12px;padding:10px;background:rgba(255,255,255,0.03)}
+    .dssItem b{display:block}
+    .dssItem .meta{margin-top:5px;color:var(--muted);font-size:12px;line-height:1.35}
+
+    .chat-box{height:420px;overflow-y:auto;border:1px solid var(--line);padding:12px;border-radius:12px;background:rgba(255,255,255,0.02);margin-bottom:10px}
+    .msg{padding:9px 12px;margin:7px 0;border-radius:14px;font-size:13px;max-width:86%;white-space:pre-wrap}
+    .bot{background:rgba(77,182,255,0.10);border:1px solid rgba(77,182,255,0.22)}
+    .user{background:rgba(46,240,163,0.10);border:1px solid rgba(46,240,163,0.22);margin-left:auto}
+    .chat-input{display:flex;gap:10px}
+    .chat-input input{flex:1;padding:12px;border:1px solid var(--line);border-radius:12px;outline:none;background:rgba(255,255,255,0.03);color:var(--text)}
+    .chat-input button{padding:0 16px;background:rgba(77,182,255,0.22);color:var(--text);border:1px solid rgba(77,182,255,0.35);border-radius:12px;cursor:pointer;font-weight:900}
+
+    /* Compare Image Styles */
+    .compare-wrap{ position:relative; width:100%; border-radius:var(--radius); overflow:hidden; border:1px solid var(--line); background:rgba(255,255,255,0.02); box-shadow:0 10px 26px rgba(0,0,0,0.25); aspect-ratio: 16 / 9; }
+    .compare-wrap img{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; display:block; user-select:none; -webkit-user-drag:none; }
+    .compare-top{ clip-path: inset(0 50% 0 0); }
+    .compare-handle{ position:absolute; top:0; bottom:0; left:50%; width:0; border-left:2px solid rgba(255,255,255,0.85); box-shadow:0 0 0 1px rgba(0,0,0,0.25); pointer-events:none; }
+    .compare-badge{ position:absolute; top:10px; padding:6px 10px; border-radius:999px; border:1px solid rgba(255,255,255,0.14); background:rgba(0,0,0,0.45); font-size:12px; font-weight:900; color:#fff; text-shadow:0 0 4px rgba(0,0,0,0.6); }
+    .compare-badge.left{ left:10px; } .compare-badge.right{ right:10px; }
+    .compare-controls{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:10px; }
+    .compare-controls input[type="range"]{ flex:1; min-width:220px; }
+    .compare-note{ font-size:12px; color:var(--muted); line-height:1.35; margin-top:6px; }
+
+    /* Calculator inputs */
+    .calc-input { width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--line); background: rgba(255,255,255,0.05); color: white; outline: none; box-sizing: border-box; font-size:14px; margin-bottom: 12px;}
+
+    @media(max-width:1000px){
+      .col-8,.col-4{grid-column:span 12;}
+      .panel{position:static;width:100%;margin-bottom:10px}
+      .hero{flex-direction:column;align-items:flex-start}
+      .hero-right{border-left:none;border-top:1px dashed rgba(255,255,255,0.10);padding-left:0;padding-top:12px;width:100%}
+    }
+  </style>
+</head>
+
+<body>
+<header>
+  <h1>🛰️ Water-AI Security <span class="subtitle" data-i18n="subtitle">Сырдарья • Qyzylorda • MVP</span></h1>
+
+  <div class="nav">
+    <button class="active" onclick="switchTab('map', this)" data-i18n="tab_map">🗺️ Карта</button>
+    <button onclick="switchTab('balance', this)" data-i18n="tab_balance">📊 Су Балансы (Менеджмент)</button> 
+    <button onclick="switchTab('forecast', this)" data-i18n="tab_idx">📈 Индексы</button>
+    <button onclick="switchTab('chat', this)" data-i18n="tab_chat">🤖 AI-чат</button>
+    <button onclick="switchTab('calc', this)" data-i18n="tab_calc">🧮 Калькулятор</button>
+
+    <div class="chip" title="Уведомления">
+      🔔 <span id="notifCount" style="color:var(--danger); font-weight:bold;">0</span>
+    </div>
+
+    <div class="chip" style="border-color:var(--warn); color:var(--warn);" onclick="openPremium()" title="Premium тариф">
+      💎 Premium
+    </div>
+
+    <div class="chip" title="LIVE DATA" style="border-color:var(--ok); color:var(--text);">
+      <span id="dataModeLabel">LIVE</span>
+      <span class="pill" style="background:var(--ok); color:#000;">📡</span>
+    </div>
+    <input id="dataModeToggle" type="checkbox" checked style="display:none;"/>
+
+    <select class="langSel" id="langSel" onchange="setLang(this.value)">
+      <option value="ru">RU</option>
+      <option value="kk" selected>KZ</option>
+      <option value="en">EN</option>
+    </select>
+  </div>
+</header>
+
+<main>
+  <div class="col-12 hero card" style="margin:0;">
+    <div class="hero-left">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; width:100%">
+          <div>
+              <div class="hero-title" data-i18n="hero_title">💧 Спаси Сырдарью: карта риска + ИИ-решения</div>
+              <div class="hero-sub" data-i18n="hero_sub">
+                Қызылорда облысындағы Сырдария өзені мен аудандар. Қызыл аймақтар = су жетіспеушілігі.
+              </div>
+          </div>
+          
+          <div class="weather-widget">
+              <div style="font-size:24px;">⛅</div>
+              <div>
+                  <div class="w-temp">-3°C</div>
+                  <div class="w-details">
+                      <span>Қызылорда</span>
+                      <span id="weather-wind">Жел: 5 м/с</span>
+                  </div>
+              </div>
+          </div>
+      </div>
+
+      <div class="hero-badges">
+        <span class="badge ok" data-i18n="b_chain">✅ Связность течения</span>
+        <span class="badge warn" data-i18n="b_idx">🛰️ NDWI/NDVI</span>
+        <span class="badge dng" data-i18n="b_anom">🚨 Аномалии/утечки</span>
+        <span class="badge">🎮 <span data-i18n="eco">Эко-очки</span>: <span id="ecoScore">0</span></span>
+      </div>
+    </div>
+
+    <div class="hero-right">
+      <div class="mission" data-i18n="mission">
+        <b>Миссия дня:</b> найди 1 критическую зону и предложи действие DSS.
+      </div>
+      <button class="btn-mini" onclick="triggerUpstreamShock()" data-i18n="shock_btn">⚡ Симуляция шока (upstream)</button>
+    </div>
+  </div>
+
+  <div class="col-12 kpi-row">
+    <div class="kpi-card"><div class="kpi-icon">🌊</div><div><div class="kpi-val" id="k_level">3.15 m</div><div class="kpi-lbl" data-i18n="k_level">Уровень</div></div></div>
+    <div class="kpi-card"><div class="kpi-icon">🛰️</div><div><div class="kpi-val" id="k_ndwi">0.32</div><div class="kpi-lbl">NDWI</div></div></div>
+    <div class="kpi-card"><div class="kpi-icon">🌿</div><div><div class="kpi-val" id="k_ndvi">0.45</div><div class="kpi-lbl">NDVI</div></div></div>
+    <div class="kpi-card"><div class="kpi-icon">🚨</div><div><div class="kpi-val" id="k_anom" style="color:var(--warn)">0</div><div class="kpi-lbl" data-i18n="k_anom">Аномалии</div></div></div>
+    <div class="kpi-card"><div class="kpi-icon">💥</div><div><div class="kpi-val" id="k_leaks" style="color:var(--danger)">0</div><div class="kpi-lbl">Leak alerts</div></div></div>
+  </div>
+
+  <div id="tab-map" class="col-12 grid-row">
+    <div class="col-8 card" style="position:relative;">
+      <h2 id="map-header-title" data-i18n="map_title">Карта русла и зон риска</h2>
+      <p class="hint">
+        <span data-i18n="hint_click">🔎 Клик по участку реки → детали зоны + DSS.</span><br>
+        <span id="demoNotice" style="color:#2ef0a3;font-weight:900;" data-i18n="demo_notice">
+          ДЕРЕКТЕР СӘТТІ ЖҮКТЕЛДІ: Спутник пен сенсор мәліметтері нақты уақытта жаңаруда.
+        </span>
+      </p>
+
+      <div class="panel">
+        <h3>⚙️ Control</h3>
+        
+        <div class="row">
+          <label style="width:100%">Базалық карта:
+            <select id="baseMapSelect" style="width:100%; margin-top:5px; padding:6px; background:rgba(0,0,0,0.5); color:#fff; border:1px solid var(--line); border-radius:6px; outline:none; font-size:12px;">
+              <option value="sat" selected>Спутник (Esri)</option>
+              <option value="2gis">Схема / 2GIS (Векторлық)</option>
+            </select>
+          </label>
+        </div>
+        
+        <div class="row">
+          <label><input type="checkbox" id="tglSegments" checked /> District circles</label>
+          <label><input type="checkbox" id="tglRiver" checked /> Real River line</label>
+        </div>
+        <div class="row">
+          <label><input type="checkbox" id="tglLeaks" checked /> Leak links</label>
+          <label><input type="checkbox" id="tglAgro" /> Agro overlay</label>
+          <input type="checkbox" id="agroModeToggle" style="display:none;" />
+        </div>
+        <div class="row">
+          <label style="width:100%">District opacity <input type="range" id="segOpacity" min="0" max="100" value="70" /></label>
+        </div>
+        <div class="row">
+          <button class="btn" onclick="refreshAll()">🔄 Update tick</button>
+        </div>
+        <div class="row">
+          <label><input type="checkbox" id="autoTick" /> Auto tick (15s)</label>
+        </div>
+      </div>
+
+      <div id="map"></div>
+    </div>
+
+    <div class="col-4 card">
+      <h2 data-i18n="rank_title">⚠️ Рейтинг зон (Top)</h2>
+      <div style="overflow-y:auto;max-height:280px;">
+        <table>
+          <thead><tr><th data-i18n="tbl_zone">Аудан (Зона)</th><th>Risk</th><th data-i18n="tbl_reason">Причина</th></tr></thead>
+          <tbody id="risk-table"></tbody>
+        </table>
+      </div>
+
+      <div class="zone-card" id="zoneDetails">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+          <h2 style="margin:0;font-size:14px" data-i18n="zone_details">📍 Детали зоны</h2>
+          <select id="zoneSelect" class="riskPill" style="padding:4px 8px; border-radius:999px; background:rgba(0,0,0,0.5); color:#fff; border:1px solid var(--line); outline:none; font-size:12px; font-weight:bold; cursor:pointer; text-align:center;" onchange="const s=segments.find(x=>x.id===this.value); if(s){ selectedSeg=s; renderZoneDetails(s); buildDSS(); addEcoScore(5); }">
+            <option value="" disabled selected data-i18n="pick_zone">Аудан таңдау</option>
+          </select>
+        </div>
+        <div class="hint" id="zoneHint" style="margin-top:6px" data-i18n="zone_hint">Клик по зоне → показатели и рекомендации.</div>
+        
+        <div id="zoneBriefText" style="font-size:12px; color:var(--primary); margin-bottom:10px; display:none; line-height:1.4;"></div>
+
+        <div class="zone-grid" id="zoneMetrics" style="display:none">
+          <div class="zone-metric"><b>Қажетті су:</b><span id="zNeed">—</span></div>
+          <div class="zone-metric"><b>Тапшылық:</b><span id="zDef" style="color:var(--danger)">—</span></div>
+          <div class="zone-metric"><b>Жеткізу керек:</b><span id="zMissing" style="color:var(--warn)">—</span></div>
+          <div class="zone-metric"><b data-i18n="m_loss">Потеря риса</b><span id="zCropLoss">—</span></div>
+          <div class="zone-metric"><b>Су сапасы (TDS):</b><span id="zTDS">—</span></div>
+          <div class="zone-metric"><b>Ағын жылдамдығы:</b><span id="zFlow">—</span></div>
+          <div class="zone-metric"><b>Топырақ ылғалдылығы:</b><span id="zSoil">—</span></div>
+          <div class="zone-metric"><b>Булану:</b><span id="zEvap">—</span></div>
+        </div>
+
+        <div style="margin-top:12px; display:none" id="zoneChartWrap">
+          <canvas id="zoneMiniChart" style="max-height:170px"></canvas>
+        </div>
+
+        <div class="actions" id="zoneActions" style="display:none">
+          <button class="a-warn" onclick="aiExplainSelected()">🤖 <span data-i18n="why_risk">Неге қауіпті?</span></button>
+          <button class="a-fix" onclick="aiPlanSelected()">🛠 <span data-i18n="plan">План действий</span></button>
+        </div>
+      </div>
+
+      <div class="zone-card">
+        <h2 style="margin:0;font-size:14px">🧠 Decision Support System</h2>
+        <div class="dss" id="dssBox"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="tab-balance" class="col-12 grid-row" style="display:none">
+    <div class="col-12 card">
+      <h2>📊 Аудандар бойынша су балансы (Менеджмент)</h2>
+      <p class="hint">Қызылорда облысының аудандарындағы суды цифрлық басқару: кімге қанша су керек және қаншасы жетіспейді.</p>
+      
+      <div style="overflow-x:auto;">
+        <table style="width:100%; text-align:left; border-collapse: collapse;">
+          <thead>
+            <tr style="border-bottom:1px solid var(--line);">
+              <th style="padding:12px;">Аудан атауы</th>
+              <th style="padding:12px;">Статус</th>
+              <th style="padding:12px;">Қажеттілік (млн м³)</th>
+              <th style="padding:12px;">Қамтамасыз етілді (%)</th>
+              <th style="padding:12px;">Тапшылық (%)</th>
+              <th style="padding:12px; color:var(--warn);">Қосымша жеткізу (млн м³)</th>
+            </tr>
+          </thead>
+          <tbody id="balance-table-body">
+            </tbody>
+        </table>
+      </div>
+      
+      <div style="margin-top:15px; display:flex; gap:10px;">
+        <button class="btn secondary" onclick="downloadReport()">⬇️ Отчетты жүктеу (JSON)</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="tab-forecast" class="col-12 grid-row" style="display:none">
+    
+    <div class="col-4 card">
+      <h2>📊 Аудандар: Су тапшылығы (%)</h2>
+      <div style="height:250px; position:relative;">
+        <canvas id="pieChart"></canvas>
+      </div>
+    </div>
+
+    <div class="col-8 card">
+      <h2 data-i18n="idx_title">Индексы NDWI / NDVI (30 дней)</h2>
+      <div style="height:250px; position:relative;">
+         <canvas id="forecastChart"></canvas>
+      </div>
+    </div>
+
+    <div class="col-12 card">
+      <h2 data-i18n="cmp_title">🖼️ Сырдария: 2020 vs 2025 (салыстыру)</h2>
+      <div class="compare-wrap" id="compareWrap">
+        <img id="img2025" alt="Syr Darya 2025" />
+        <img id="img2020" class="compare-top" alt="Syr Darya 2020" />
+        <div class="compare-handle" id="compareHandle"></div>
+        <div class="compare-badge left" id="badge2020">2020</div>
+        <div class="compare-badge right" id="badge2025">2025</div>
+      </div>
+      <div class="compare-controls">
+        <span class="riskPill" style="color:var(--muted)">2020</span>
+        <input id="compareSlider" type="range" min="0" max="100" value="50" />
+        <span class="riskPill" style="color:var(--muted)">2025</span>
+      </div>
+    </div>
+  </div>
+
+  <div id="tab-chat" class="col-12 grid-row" style="display:none">
+    <div class="col-8 card" style="margin:0 auto;">
+      <h2 data-i18n="chat_title">AI-чат Water-Security</h2>
+      <div class="chat-box" id="chatBox">
+        <div class="msg bot" data-i18n="chat_hi">Привет! Мен Сырдария бойынша AI-ассистентпін. Кез келген сұрақ қой!</div>
+      </div>
+      <div class="chat-input">
+        <input type="text" id="chatInput" data-i18n-ph="chat_ph" placeholder="Любой вопрос…" onkeypress="if(event.key==='Enter') sendMessage()">
+        <button onclick="sendMessage()" data-i18n="send">Отправить</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="tab-calc" class="col-12 grid-row" style="display:none">
+    <div class="col-12 card" style="max-width: 600px; margin: 0 auto;">
+      <h2 style="font-size:18px;">🧮 Су көлемін есептеу калькуляторы</h2>
+      <p class="hint">Егістік аумағы мен су нормасы арқылы қанша млн м³ су қажет екенін дәл есептеп алыңыз.</p>
+      
+      <div style="display:flex; flex-direction:column; gap:8px; margin-top:20px;">
+        <label style="color:var(--muted); font-size:12px; font-weight:bold;">Аумақ (Гектармен көрсетіңіз):</label>
+        <input type="number" id="calcArea" class="calc-input" placeholder="Мысалы: 1500">
+        
+        <label style="color:var(--muted); font-size:12px; font-weight:bold; margin-top:10px;">Су нормасы (м³/га):</label>
+        <input type="number" id="calcNorm" class="calc-input" placeholder="Күріш үшін орташа 25000" value="25000">
+        
+        <button class="btn" onclick="runCalculator()" style="margin-top:15px; padding:12px; font-size:14px;">Дәл есептеу</button>
+        
+        <div id="calcResult" style="margin-top:20px; padding:15px; background:rgba(46,240,163,0.1); border:1px solid var(--ok); border-radius:12px; display:none; text-align:center;">
+        </div>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<div id="toastContainer" class="toast-container"></div>
+
+<div id="premiumModal" class="modal-overlay" onclick="if(event.target===this) closePremium()">
+  <div class="modal-content">
+    <h2 style="color:var(--warn); margin-top:0;">💎 Water-AI Premium</h2>
+    <p style="color:var(--muted); font-size:14px;">Толық API, 1-метрлік спутник суреттері және SMS дабылдарды қосу үшін жазылымды рәсімдеңіз.</p>
+    
+    <div class="plan-card" onclick="alert('Базалық тарифті таңдадыңыз! Төлем жүйесіне өтуде...')">
+      <h3 style="margin:0; color:var(--text);">PRO <span class="plan-price" style="color:var(--ok)">$49/ай</span></h3>
+      <p style="font-size:12px; color:var(--muted); margin: 8px 0 0 0;">Нақты уақыттағы су балансы + 5 аудан</p>
+    </div>
+    
+    <div class="plan-card" onclick="alert('Enterprise тарифті таңдадыңыз! Келісімшарт жасауға өтуде...')">
+      <h3 style="margin:0; color:var(--text);">ENTERPRISE <span class="plan-price" style="color:var(--primary)">$299/ай</span></h3>
+      <p style="font-size:12px; color:var(--muted); margin: 8px 0 0 0;">Шексіз аудандар + Жеке AI модель + SMS Дабыл</p>
+    </div>
+    
+    <button class="btn secondary" style="margin-top:20px; width:100%" onclick="closePremium()">Кейінірек</button>
+  </div>
+</div>
+
+<script>
+/* ======================
+   1) I18N (RU/KZ/EN)
+====================== */
+const I18N = {
+  ru:{
+    subtitle:"Сырдарья • Qyzylorda • MVP",
+    tab_map:"🗺️ Карта", tab_idx:"📈 Индексы", tab_chat:"🤖 AI-чат", tab_balance:"📊 Су Балансы (Менеджмент)", tab_calc:"🧮 Калькулятор",
+    agro:"Agro-Mode",
+    hero_title:"💧 Спаси Сырдарью: карта риска + ИИ-решения",
+    hero_sub:"Реальная линия реки и гео-зоны Кызылординской области. Красные зоны = дефицит воды.",
+    b_chain:"✅ Связность течения", b_idx:"🛰️ NDWI/NDVI", b_anom:"🚨 Аномалии/утечки", eco:"Эко-очки",
+    mission:"<b>Миссия дня:</b> найди 1 критическую зону и предложи действие DSS.",
+    shock_btn:"⚡ Симуляция шока (upstream)",
+    k_level:"Уровень", k_anom:"Аномалии",
+    map_title:"Карта русла и гео-районов",
+    hint_click:"🔎 Клик по району → су балансы + DSS.",
+    demo_notice:"ДАННЫЕ ЗАГРУЖЕНЫ: Спутниковые снимки и датчики в реальном времени.",
+    rank_title:"⚠️ Рейтинг зон (Top)",
+    tbl_zone:"Район", tbl_reason:"Причина",
+    zone_details:"📍 Детали района", pick_zone:"Выберите район", zone_hint:"Клик по зоне → показатели и рекомендации.",
+    m_level:"Уровень", m_def:"Тапшылық", m_loss:"Потеря риса",
+    why_risk:"Почему риск?", plan:"План действий", export_zone:"Экспорт",
+    idx_title:"Индексы NDWI / NDVI (30 дней)",
+    chat_title:"AI-чат Water-Security",
+    chat_hi:"Привет! Спроси про Сырдарью, экологию или риски.",
+    chat_ph:"Любой вопрос…", send:"Отправить",
+    cmp_title:"🖼️ Сырдарья: 2020 vs 2025"
+  },
+  kk:{
+    subtitle:"Сырдария • Қызылорда • MVP",
+    tab_map:"🗺️ Карта", tab_idx:"📈 Индекстер", tab_chat:"🤖 AI-чат", tab_balance:"📊 Су Балансы (Менеджмент)", tab_calc:"🧮 Калькулятор",
+    agro:"Agro-Mode",
+    hero_title:"💧 Сырдарияны сақта: тәуекел картасы + AI шешім",
+    hero_sub:"Қызылорда облысы аумағындағы Сырдарияның нақты өзен сызығы мен аудандар.",
+    b_chain:"✅ Ағыс байланысы", b_idx:"🛰️ NDWI/NDVI", b_anom:"🚨 Аномалия/утечка", eco:"Эко-ұпай",
+    mission:"<b>Бүгінгі миссия:</b> 1 қауіпті ауданды тауып, DSS арқылы әрекет ұсын.",
+    shock_btn:"⚡ Upstream соққы симуляциясы",
+    k_level:"Деңгей", k_anom:"Аномалия",
+    map_title:"Өзен мен аудандар картасы",
+    hint_click:"🔎 Ауданды бас → нақты су балансы шығады.",
+    demo_notice:"ДЕРЕКТЕР СӘТТІ ЖҮКТЕЛДІ: Спутник пен сенсор мәліметтері нақты уақытта жаңаруда.",
+    rank_title:"⚠️ Зоналар рейтингі (Top)",
+    tbl_zone:"Аудан", tbl_reason:"Себеп",
+    zone_details:"📍 Аудан деталі", pick_zone:"Аудан таңдау", zone_hint:"Картадан ауданды бас немесе жоғарыдан таңда → көрсеткіштер.",
+    m_level:"Деңгей", m_def:"Тапшылық", m_loss:"Күріш шығыны",
+    why_risk:"Неге қауіпті?", plan:"Әрекет жоспары", export_zone:"Экспорт",
+    idx_title:"NDWI / NDVI индекстері (30 күн)",
+    chat_title:"Water-Security AI-чат",
+    chat_hi:"Сәлем! Сырдария, су басқару немесе экология жайлы сұра.",
+    chat_ph:"Кез келген сұрақ…", send:"Жіберу",
+    cmp_title:"🖼️ Сырдария: 2020 vs 2025"
+  },
+  en:{
+    subtitle:"Syr Darya • Qyzylorda • MVP",
+    tab_map:"🗺️ Map", tab_idx:"📈 Indices", tab_chat:"🤖 AI Chat", tab_balance:"📊 Water Balance", tab_calc:"🧮 Calculator",
+    agro:"Agro-Mode",
+    hero_title:"💧 Save Syr Darya: risk map + AI decisions",
+    hero_sub:"Real river line and geo-districts of Kyzylorda region.",
+    b_chain:"✅ Flow connectivity", b_idx:"🛰️ NDWI/NDVI", b_anom:"🚨 Anomalies/leaks", eco:"Eco score",
+    mission:"<b>Mission:</b> find 1 critical district and propose a DSS action.",
+    shock_btn:"⚡ Upstream shock demo",
+    k_level:"Level", k_anom:"Anomalies",
+    map_title:"River map and geo-districts",
+    hint_click:"🔎 Click a district → water balance + DSS.",
+    demo_notice:"DATA LOADED: Satellite and sensor data updating in real-time.",
+    rank_title:"⚠️ Top districts",
+    tbl_zone:"District", tbl_reason:"Reason",
+    zone_details:"📍 District details", pick_zone:"Pick a district", zone_hint:"Click a zone → metrics and recommendations.",
+    m_level:"Level", m_def:"Deficit", m_loss:"Rice loss",
+    why_risk:"Why risk?", plan:"Action plan", export_zone:"Export zone",
+    idx_title:"NDWI / NDVI (30 days)",
+    chat_title:"Water-Security AI Chat",
+    chat_hi:"Hi! Ask me about Syr Darya, ecology, or water risks.",
+    chat_ph:"Ask anything…", send:"Send",
+    cmp_title:"🖼️ Syr Darya: 2020 vs 2025"
+  }
+};
+
+let LANG = "kk";
+function setLang(l){
+  LANG = l;
+  document.querySelectorAll("[data-i18n]").forEach(el=>{
+    const k = el.getAttribute("data-i18n");
+    if(I18N[LANG][k]){
+      if(k==="mission") el.innerHTML = I18N[LANG][k];
+      else if(el.tagName === 'OPTION') el.textContent = I18N[LANG][k];
+      else el.textContent = I18N[LANG][k];
+    }
+  });
+  document.querySelectorAll("[data-i18n-ph]").forEach(el=>{
+    const k = el.getAttribute("data-i18n-ph");
+    if(I18N[LANG][k]) el.placeholder = I18N[LANG][k];
+  });
+}
+
+const SRC_2020 = "syrdarya_2020.jpg";
+const SRC_2025 = "syrdarya_2025.jpg";
+
+function initCompare(){
+  const img20 = document.getElementById("img2020");
+  const img25 = document.getElementById("img2025");
+  const slider = document.getElementById("compareSlider");
+  const topImg = document.getElementById("img2020");
+  const handle = document.getElementById("compareHandle");
+
+  if(!img20 || !img25 || !slider || !topImg || !handle) return;
+
+  img20.src = SRC_2020;
+  img25.src = SRC_2025;
+
+  const apply = (v)=>{
+    const pct = clamp(v,0,100);
+    topImg.style.clipPath = `inset(0 ${100-pct}% 0 0)`;
+    handle.style.left = pct + "%";
+  };
+  slider.addEventListener("input", ()=>apply(Number(slider.value)));
+  apply(Number(slider.value));
+}
+
+/* ======================
+   2) Map Logic (Real River + Circular Districts)
+====================== */
+let map, riverGroup, segLayer, agroLayer, leaksLayer, labelsLayer;
+let satLayer, vecLayer; // ЖАҢА КАРТА ҚАБАТТАРЫ
+let zoneMiniChart=null, forecastChart=null, pieChart=null;
+let selectedSeg=null;
+let autoTimer=null, dashAnimId=null;
+
+let segments = []; 
+
+const cityMarkers = [
+    { name: "Жаңақорған", lat: 43.91, lng: 67.24 },
+    { name: "Шиелі", lat: 44.18, lng: 66.75 },
+    { name: "Қызылорда (Сырдария)", lat: 44.80, lng: 65.50 },
+    { name: "Қармақшы", lat: 45.48, lng: 64.05 },
+    { name: "Қазалы", lat: 45.62, lng: 63.31 }
+];
+
+const HIST = { levelMean:(s)=> 3.2 - 0.7*s, levelSigma:(s)=> 0.35 + 0.10*s };
+const FLOW = { tick:0, impulses:[], delayZones:2.5, attenuation:0.82 };
+
+function clamp(x,a,b){ return Math.max(a, Math.min(b,x)); }
+function rnd(n=1){ return (Math.random()-0.5)*n; }
+function fmt(n,d=2){ return Number(n).toFixed(d); }
+function escapeHtml(str){ return (str||"").replace(/[&<>"']/g, m=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;" }[m])); }
+
+function riskColor(r){
+  if(r<25) return "#2ef0a3";   // green
+  if(r<55) return "#ffcc00";   // yellow
+  return "#ff4d6d";            // red
+}
+function statusText(r){
+  if(r<25) return {ru:"Норма", kk:"Қалыпты", en:"Normal"}[LANG];
+  if(r<55) return {ru:"Средний риск", kk:"Орташа қауіп", en:"Moderate"}[LANG];
+  return {ru:"Дефицит воды", kk:"Су тапшылығы (Қауіпті)", en:"Critical"}[LANG];
+}
+
+function NDWI(green,nir){ const den=green+nir; return den===0?0:(green-nir)/den; }
+function NDVI(nir,red){ const den=nir+red; return den===0?0:(nir-red)/den; }
+function sToIdx(s,N){ return clamp(Math.round(s*(N-1)),0,N-1); }
+
+function levelWithConnectivity(s,N){
+  let level = HIST.levelMean(s) + 0.18*Math.sin((FLOW.tick/10)+s*2.0);
+  const idx=sToIdx(s,N);
+  FLOW.impulses.forEach(imp=>{
+    const dt = FLOW.tick - (imp.t0 + FLOW.delayZones + idx);
+    if(dt>=0 && dt<=6) level -= imp.magnitude*Math.pow(FLOW.attenuation, idx)*Math.exp(-dt/2.0);
+  });
+  FLOW.impulses = FLOW.impulses.filter(imp => (FLOW.tick-imp.t0) < 45);
+  return clamp(level + rnd(0.05), 0.6, 4.2);
+}
+
+function riskScore(seg){
+  const rLevel = clamp((HIST.levelMean(seg.s) - seg.level) / (HIST.levelSigma(seg.s)+0.01), 0, 2) / 2;
+  const rWater = clamp((0.18 - seg.ndwi)/0.30, 0, 1);
+  const rVeg   = clamp((0.40 - seg.ndvi)/0.35, 0, 1);
+  const rLeak  = seg.leakProb/100;
+  const rDef   = seg.deficit;
+
+  const agroOn = document.getElementById("agroModeToggle").checked || document.getElementById("tglAgro").checked;
+  const wVeg = agroOn ? 0.22 : 0.10;
+  
+  let score = Math.round(clamp(100*(0.30*rLevel + 0.30*rWater + wVeg*rVeg + 0.18*rDef + 0.12*rLeak),0,100));
+
+  if (seg.s <= 0.3) score = 10 + Math.random()*10;
+  else if (seg.s <= 0.6) score = 40 + Math.random()*10;
+  else score = 80 + Math.random()*15;
+  return Math.round(score);
+}
+
+function generateSegmentMetrics(){
+  const N=segments.length;
+  segments.forEach(seg=>{
+    const level = levelWithConnectivity(seg.s, N);
+    const nearWater = clamp((level - 1.0)/2.5, 0, 1);
+    
+    const ndwi = clamp(NDWI(clamp(0.10+0.28*nearWater+rnd(0.04),0.01,0.95), clamp(0.06+0.18*(1-nearWater)+rnd(0.04),0.01,0.95)), -1, 1);
+    const ndvi = clamp(NDVI(clamp(0.20+0.55*0.5+0.12*(1-clamp((0.18-ndwi)/0.25,0,1))+rnd(0.05),0.01,0.98), clamp(0.14+0.22*0.5+0.18*clamp((0.18-ndwi)/0.25,0,1)+rnd(0.05),0.01,0.98)), -1, 1);
+
+    const leakProb = Math.round(clamp(10+55*Math.sin((seg.s*3.14)+FLOW.tick/6)+25*clamp((2.2-level)/1.6,0,1)+20*Math.random(), 0, 100));
+    const deficit = clamp(0.55*clamp((2.1-level)/1.7,0,1) + 0.45*clamp((0.18-ndwi)/0.28,0,1), 0, 1);
+    
+    seg.level=level; seg.ndwi=ndwi; seg.ndvi=ndvi; 
+    seg.leakProb=leakProb; seg.deficit=deficit; 
+    seg.cropLoss=Math.round(clamp(0.45*clamp((0.20-ndwi)/0.25,0,1) + 0.35*clamp((0.45-ndvi)/0.35,0,1) + 0.20*deficit, 0, 1)*100);
+    seg.risk = riskScore(seg);
+    
+    const baseNeed = 50 + (1 - seg.s) * 50; 
+    seg.waterNeed = baseNeed;
+    seg.deficitPct = Math.round(deficit * 100);
+    seg.givenPct = 100 - seg.deficitPct;
+    seg.givenVal = baseNeed * (seg.givenPct / 100);
+    seg.missingVal = baseNeed * (seg.deficitPct / 100);
+
+    seg.tds = clamp(400 + seg.s * 300 + rnd(50), 300, 1000);
+    seg.flowRate = clamp(150 - seg.s * 80 + rnd(10), 20, 200);
+    seg.soilMoisture = clamp(40 - seg.deficitPct * 0.3 + rnd(5), 10, 60);
+    seg.evap = clamp(5 + seg.s * 2 + rnd(1), 2, 10);
+
+    const reasons=[];
+    if(seg.deficitPct >= 40) reasons.push("Катастрофалық тапшылық");
+    else if(seg.deficitPct >= 15) reasons.push("Су мөлшері аз");
+    else reasons.push("Қалыпты");
+    seg.reason = reasons.join(", ");
+  });
+}
+
+// --------------------------------------------------
+// OSM ГЕОМЕТРИЯ ФУНКЦИЯЛАРЫ
+// --------------------------------------------------
+async function loadSyrDarya(){
+  const drawFallback = () => {
+      riverGroup.clearLayers();
+      const fallbackRiver = [
+        [43.7, 67.8], [43.91, 67.24], [44.18, 66.75], 
+        [44.80, 65.50], [45.48, 64.05], [45.62, 63.31], [46.0, 61.5]
+      ];
+      const glowStyle = { pane:"riverPane", color:"#00e5ff", weight: 22, opacity: 0.18, lineCap:"round", lineJoin:"round" };
+      const mainStyle = { pane:"riverPane", color:"#39ffcf", weight: 12, opacity: 0.80, lineCap:"round", lineJoin:"round" };
+      L.polyline(fallbackRiver, glowStyle).addTo(riverGroup);
+      L.polyline(fallbackRiver, mainStyle).addTo(riverGroup);
+  };
+
+  const s = 43.50, w = 62.00, n = 46.50, e = 68.00;
+  const query = `[out:json][timeout:25];
+    (
+      way["waterway"="river"]["name"~"Сырдарья|Сырдария|Syr Darya|Sirdaryo"](${s},${w},${n},${e});
+      way["waterway"="river"]["name:ru"~"Сырдарья|Сырдария"](${s},${w},${n},${e});
+    );
+    out body;
+    >;
+    out skel qt;`;
+  
+  const url = "https://overpass-api.de/api/interpreter";
+
+  try {
+      const res = await fetch(url, {
+        method:"POST",
+        headers: { "Content-Type":"text/plain;charset=UTF-8" },
+        body: query
+      });
+      
+      if (!res.ok) throw new Error("Overpass error: " + res.status);
+      const osm = await res.json();
+
+      const nodes = new Map();
+      for (const el of osm.elements){
+        if (el.type === "node") nodes.set(el.id, [el.lat, el.lon]);
+      }
+
+      const lines = [];
+      for (const el of osm.elements){
+        if (el.type !== "way" || !el.nodes) continue;
+        const latlngs = el.nodes.map(id => nodes.get(id)).filter(Boolean);
+        if (latlngs.length >= 2) lines.push(latlngs);
+      }
+
+      if (!lines.length){
+        drawFallback();
+        return;
+      }
+
+      riverGroup.clearLayers();
+
+      const glowStyle = { pane:"riverPane", color:"#00e5ff", weight: 22, opacity: 0.18, lineCap:"round", lineJoin:"round" };
+      const mainStyle = { pane:"riverPane", color:"#39ffcf", weight: 12, opacity: 0.80, lineCap:"round", lineJoin:"round" };
+
+      for (const latlngs of lines){
+        L.polyline(latlngs, glowStyle).addTo(riverGroup);
+        L.polyline(latlngs, mainStyle).addTo(riverGroup);
+      }
+
+  } catch(err) {
+      console.error("OSM Load Error:", err);
+      drawFallback(); 
+  }
+}
+
+function loadDistricts(){
+    segments = [];
+    let indexCount = 0;
+
+    cityMarkers.forEach(city => {
+        const layer = L.circle([city.lat, city.lng], {
+            radius: 25000, 
+            weight: 2,
+            fillOpacity: 0.6,
+            pane: "circlesPane" 
+        });
+
+        segments.push({
+            id: city.name, 
+            layer: layer, 
+            centerPoint: [city.lat, city.lng],
+            s: indexCount / Math.max(1, cityMarkers.length - 1),
+            level:0, ndwi:0, ndvi:0, leakProb:0, deficit:0, cropLoss:0, risk:0, reason:"",
+            waterNeed:0, givenPct:0, deficitPct:0, missingVal:0,
+            tds:0, flowRate:0, soilMoisture:0, evap:0
+        });
+        indexCount++;
+    });
+
+    populateZoneSelect();
+}
+
+function populateZoneSelect() {
+    const sel = document.getElementById("zoneSelect");
+    sel.innerHTML = '<option value="" disabled selected data-i18n="pick_zone">Аудан таңдау</option>';
+    segments.forEach(s => {
+        sel.innerHTML += `<option value="${s.id}">${s.id}</option>`;
+    });
+}
+
+function updateBriefText(id) {
+    const briefObj = {
+        "Жаңақорған": "📍 Оңтүстік шекара. Ауыл шаруашылығы қарқынды, су ең бірінші осында келеді.",
+        "Шиелі": "🍚 Күріш алқаптары көп орналасқан аудан. Суды өте көп қажет етеді.",
+        "Қызылорда (Сырдария)": "🏙️ Облыс орталығы. Индустрия және халықтың суды тұтыну деңгейі жоғары.",
+        "Қармақшы": "⚠️ Төменгі ағысқа өту аймағы. Су деңгейі мен сапасы төмендей бастайды.",
+        "Қазалы": "🌊 Арал теңізіне жақын экологиялық транзит. Мұнда су ең аз жетеді."
+    };
+    const briefText = document.getElementById("zoneBriefText");
+    briefText.style.display = "block";
+    briefText.textContent = "ℹ️ " + (briefObj[id] || "Аудан туралы қысқаша мәлімет.");
+}
+
+function initCharts() {
+  const ctxLine = document.getElementById("forecastChart");
+  if(ctxLine) {
+    forecastChart = new Chart(ctxLine, {
+      type: "line",
+      data: {
+        labels: ["-6 күн", "-5 күн", "-4 күн", "-3 күн", "-2 күн", "-1 күн", "Бүгін"],
+        datasets: [
+          { label: "NDWI", data: [0.1, 0.2, 0.15, 0.18, 0.12, 0.1, 0.08], borderColor: "#4db6ff", backgroundColor: "rgba(77,182,255,0.1)", fill: true, tension: 0.3 },
+          { label: "NDVI", data: [0.4, 0.42, 0.38, 0.35, 0.3, 0.25, 0.2], borderColor: "#2ef0a3", backgroundColor: "rgba(46,240,163,0.1)", fill: true, tension: 0.3 }
+        ]
+      },
+      options: { responsive: true, maintainAspectRatio: false }
+    });
+  }
+
+  const ctxPie = document.getElementById("pieChart");
+  if(ctxPie) {
+    pieChart = new Chart(ctxPie, {
+      type: "doughnut",
+      data: {
+        labels: [],
+        datasets: [{
+          data: [],
+          backgroundColor: [],
+          borderWidth: 1,
+          borderColor: "#101a2f"
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'right', labels: { color: '#e7eefc', font: {size: 11} } }
+        },
+        cutout: '60%'
+      }
+    });
+  }
+}
+
+function updateCharts() {
+  if(pieChart && segments.length > 0) {
+    pieChart.data.labels = segments.map(s => s.id);
+    pieChart.data.datasets[0].data = segments.map(s => s.deficitPct); 
+    pieChart.data.datasets[0].backgroundColor = segments.map(s => riskColor(s.risk)); 
+    pieChart.update();
+  }
+
+  if(forecastChart && segments.length > 0) {
+    const baseNDWI = segments.reduce((sum, s)=>sum+s.ndwi, 0)/segments.length;
+    const baseNDVI = segments.reduce((sum, s)=>sum+s.ndvi, 0)/segments.length;
+    const newDataNDWI = forecastChart.data.datasets[0].data;
+    const newDataNDVI = forecastChart.data.datasets[1].data;
+    
+    newDataNDWI.shift(); newDataNDWI.push(baseNDWI);
+    newDataNDVI.shift(); newDataNDVI.push(baseNDVI);
+    
+    forecastChart.update();
+  }
+}
+
+function showToast(title, msg) {
+  const container = document.getElementById("toastContainer");
+  const div = document.createElement("div");
+  div.className = "toast";
+  div.innerHTML = `<b style="color:var(--danger)">${title}</b><div style="font-size:12px;margin-top:4px;color:var(--muted)">${msg}</div>`;
+  container.appendChild(div);
+  
+  let countSpan = document.getElementById("notifCount");
+  countSpan.innerText = parseInt(countSpan.innerText) + 1;
+
+  setTimeout(() => { div.remove(); }, 6000); 
+}
+
+function triggerAlerts() {
+  const badZones = segments.filter(s => s.deficitPct > 55 || s.leakProb > 80);
+  if(badZones.length > 0 && Math.random() > 0.4) { 
+      const worst = badZones.sort((a,b) => b.deficitPct - a.deficitPct)[0];
+      showToast("🚨 Дабыл: " + worst.id, `Критикалық су тапшылығы (${worst.deficitPct}%) немесе апатты аймақ тіркелді!`);
+  }
+}
+
+function openPremium() {
+  document.getElementById("premiumModal").style.display = "flex";
+}
+function closePremium() {
+  document.getElementById("premiumModal").style.display = "none";
+}
+
+function initMap(){
+  map = L.map('map').setView([44.80, 65.50], 7);
+  
+  // ЖАҢА ФУНКЦИЯ: Екі түрлі карта қабаттары
+  satLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { attribution:'Esri' });
+  vecLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { attribution:'© OpenStreetMap, CARTO' });
+  
+  satLayer.addTo(map); // Әдепкі бойынша Спутник
+
+  map.createPane("riverPane");
+  map.getPane("riverPane").classList.add("riverPane");
+  map.getPane("riverPane").style.zIndex = 390; 
+  map.getPane("riverPane").style.pointerEvents = "none"; 
+
+  map.createPane("circlesPane");
+  map.getPane("circlesPane").classList.add("circlesPane");
+  map.getPane("circlesPane").style.zIndex = 410; 
+
+  riverGroup = L.layerGroup([], { pane:"riverPane" }).addTo(map);
+  segLayer = L.layerGroup().addTo(map);
+  agroLayer = L.layerGroup().addTo(map);
+  leaksLayer = L.layerGroup().addTo(map);
+  labelsLayer = L.layerGroup().addTo(map);
+
+  cityMarkers.forEach(city => {
+      L.marker([city.lat, city.lng], { icon: L.divIcon({ className: 'map-label-icon', html: `<div class="map-label-text">${city.name}</div>`, iconSize: [100, 20], iconAnchor: [50, 10] }) }).addTo(labelsLayer);
+  });
+
+  const legend = L.control({position:'bottomright'});
+  legend.onAdd = function(){
+    const div = L.DomUtil.create('div','legend');
+    div.innerHTML += '<b style="display:block;margin-bottom:6px">Су Тапшылығы (Аймақтар)</b>';
+    div.innerHTML += '<i style="background:#2ef0a3"></i> Жасыл (Норма)<br>';
+    div.innerHTML += '<i style="background:#ffcc00"></i> Сары (Орташа тапшылық)<br>';
+    div.innerHTML += '<i style="background:#ff4d6d"></i> Қызыл (Қауіпті тапшылық)<br>';
+    return div;
+  };
+  legend.addTo(map);
+
+  loadSyrDarya(); 
+  loadDistricts();
+
+  initCharts(); 
+  bindUI(); refreshAll(); 
+}
+
+function bindUI(){
+  document.getElementById("tglSegments").addEventListener("change",()=>{ document.getElementById("tglSegments").checked ? segLayer.addTo(map) : map.removeLayer(segLayer); });
+  document.getElementById("tglRiver").addEventListener("change",()=>{ document.getElementById("tglRiver").checked ? riverGroup.addTo(map) : map.removeLayer(riverGroup); });
+  document.getElementById("tglLeaks").addEventListener("change",()=>{ document.getElementById("tglLeaks").checked ? leaksLayer.addTo(map) : map.removeLayer(leaksLayer); });
+  document.getElementById("segOpacity").addEventListener("input",()=>{ setSegOpacity(parseInt(document.getElementById("segOpacity").value,10)/100); });
+  document.getElementById("tglAgro").addEventListener("change",()=> { applyAgroOverlay(); refreshRenderOnly(); });
+  document.getElementById("agroModeToggle").addEventListener("change",()=>{ document.getElementById("tglAgro").checked = document.getElementById("agroModeToggle").checked; applyAgroOverlay(); refreshRenderOnly(); });
+  document.getElementById("autoTick").addEventListener("change",()=>{ if(document.getElementById("autoTick").checked) autoTimer=setInterval(()=>refreshAll(),15000); else { clearInterval(autoTimer); autoTimer=null; } });
+  
+  // Карта ауыстыру функциясын тыңдаушы (2GIS vs Sat)
+  document.getElementById("baseMapSelect").addEventListener("change", (e) => {
+    if(e.target.value === "sat") {
+        map.removeLayer(vecLayer);
+        satLayer.addTo(map);
+    } else {
+        map.removeLayer(satLayer);
+        vecLayer.addTo(map);
+    }
+  });
+}
+
+function setSegOpacity(alpha){ segments.forEach(seg => { seg.layer.setStyle({fillOpacity: clamp(alpha,0,0.9)}); }); }
+
+function renderRiverRisk(){
+  segLayer.clearLayers();
+  const alpha=parseInt(document.getElementById("segOpacity").value,10)/100;
+  const agroOn = document.getElementById("agroModeToggle").checked || document.getElementById("tglAgro").checked;
+
+  segments.forEach(seg=>{
+    const c=riskColor(seg.risk);
+    seg.layer.setStyle({ color:c, fillColor:c, fillOpacity: clamp(alpha,0,0.9) });
+    seg.layer.addTo(segLayer);
+
+    const cropLine = agroOn ? `<hr style="border:none;border-top:1px solid rgba(255,255,255,0.08);margin:8px 0">🍚 Күріштен келетін шығын қаупі: <b>${seg.cropLoss}%</b>` : "";
+    let statusLabel = (c === "#ff4d6d") ? "Қызыл Аймақ (Су Тапшылығы!)" : (c === "#ffcc00") ? "Сары Аймақ (Орташа тапшылық)" : "Жасыл Аймақ (Су жеткілікті)";
+
+    seg.layer.bindPopup(`
+      <div style="min-width:240px;font-family:system-ui;color:#e7eefc;background:#101a2f;padding:10px;border-radius:8px;">
+        <b style="color:${c};font-size:15px;">Аудан: ${seg.id}</b>
+        <div style="margin-top:6px;color:#fff;font-weight:bold;font-size:13px">${statusLabel}</div>
+        <hr style="border:none;border-top:1px solid rgba(255,255,255,0.08);margin:8px 0">
+        💧 <b>Су балансы:</b><br>
+        • Қажеттілік: <b style="color:#4db6ff">${seg.waterNeed.toFixed(1)} млн м³</b><br>
+        • Жететін су: <b>${seg.givenPct}%</b> (${seg.givenVal.toFixed(1)} млн м³)<br>
+        • Тапшылық (жетпейді): <b style="color:#ff4d6d">${seg.deficitPct}%</b><br>
+        • Жеткізу/Үнемдеу керек: <b style="color:#ffcc00">${seg.missingVal.toFixed(1)} млн м³</b><br>
+        <hr style="border:none;border-top:1px solid rgba(255,255,255,0.08);margin:8px 0">
+        💥 <b>Утечка қаупі (Leak): ${seg.leakProb}%</b><br>
+        ${cropLine}
+      </div>
+    `);
+
+    seg.layer.off('click').on("click",()=>{
+      selectedSeg=seg;
+      const selectEl = document.getElementById("zoneSelect");
+      selectEl.value = seg.id;
+      selectEl.style.borderColor = c;
+      selectEl.style.color = c;
+      renderZoneDetails(seg);
+      buildDSS();
+      addEcoScore(5);
+    });
+  });
+  if(!document.getElementById("tglSegments").checked) map.removeLayer(segLayer);
+}
+
+function applyAgroOverlay(){
+  agroLayer.clearLayers();
+  if(!(document.getElementById("agroModeToggle").checked || document.getElementById("tglAgro").checked)) return;
+  segments.forEach(seg=>{
+    if(seg.ndvi < 0.20) return;
+    const col=(seg.cropLoss>=70)?"#ff4d6d":(seg.cropLoss>=45)?"#ff8f2a":(seg.cropLoss>=25)?"#ffcc00":"#2ef0a3";
+    L.circle(seg.centerPoint, { radius: 28000, color:"rgba(0,0,0,0)", weight:0, fillColor:col, fillOpacity: 0.10+0.25*(seg.cropLoss/100), pane: "circlesPane" }).addTo(agroLayer);
+  });
+  agroLayer.addTo(map);
+}
+
+function renderLeaks(){
+  leaksLayer.clearLayers();
+  const cand=[...segments].filter(s=>s.leakProb>=70).sort((a,b)=>b.leakProb-a.leakProb).slice(0,6);
+  for(let i=0;i<cand.length-1;i++){
+    const a=cand[i], b=cand[i+1];
+    const prob=Math.round((a.leakProb+b.leakProb)/2);
+    const col=prob>=85?"#ff4d6d":prob>=70?"#ff8f2a":"#ffcc00";
+    L.polyline([a.centerPoint, b.centerPoint],{ color:col, weight:4, opacity:0.9, dashArray:"10 14" }).addTo(leaksLayer)
+      .bindPopup(`<b style="color:${col}">Апатты аймақ (Leak corridor)</b><br>Ықтималдық: <b>${prob}%</b>`);
+  }
+  if(!document.getElementById("tglLeaks").checked) map.removeLayer(leaksLayer);
+}
+
+function renderRanking(){
+  const tbody=document.getElementById("risk-table");
+  tbody.innerHTML="";
+  [...segments].sort((a,b)=>b.risk-a.risk).slice(0,10).forEach(s=>{
+    const c=riskColor(s.risk);
+    tbody.innerHTML += `<tr><td>${s.id}</td><td><span class="riskPill" style="border-color:${c};color:${c}">${s.risk}</span></td><td style="color:var(--muted)">${s.reason}</td></tr>`;
+  });
+}
+
+function detectAnomalies(){
+  const anom = [...segments].sort((a,b)=>a.s-b.s).slice(0,2).filter(s=>Math.abs(s.level-HIST.levelMean(s.s))/Math.max(0.01,HIST.levelMean(s.s)) > 0.30);
+  window.__anomCount=anom.length;
+}
+
+function renderKPI(){
+  if(segments.length === 0) return;
+  document.getElementById("k_level").textContent=fmt(segments.reduce((s,x)=>s+x.level,0)/segments.length,2)+" m";
+  document.getElementById("k_ndwi").textContent=fmt(segments.reduce((s,x)=>s+x.ndwi,0)/segments.length,2);
+  document.getElementById("k_ndvi").textContent=fmt(segments.reduce((s,x)=>s+x.ndvi,0)/segments.length,2);
+  document.getElementById("k_anom").innerHTML=`<span style="color:var(--warn)">${window.__anomCount||0}</span>`;
+  document.getElementById("k_leaks").innerHTML=`<span style="color:var(--danger)">${segments.filter(s=>s.leakProb>=80).length}</span>`;
+}
+
+function renderZoneDetails(seg){
+  const c=riskColor(seg.risk);
+  
+  const selectEl = document.getElementById("zoneSelect");
+  selectEl.value = seg.id;
+  selectEl.style.borderColor = c;
+  selectEl.style.color = c;
+  
+  updateBriefText(seg.id);
+  document.getElementById("zoneHint").style.display = "none";
+
+  document.getElementById("zoneMetrics").style.display="grid";
+  document.getElementById("zoneActions").style.display="flex";
+  document.getElementById("zoneChartWrap").style.display="block";
+
+  document.getElementById("zNeed").textContent=seg.waterNeed.toFixed(1)+" млн м³";
+  document.getElementById("zDef").textContent=seg.deficitPct+"%";
+  document.getElementById("zMissing").textContent=seg.missingVal.toFixed(1)+" млн м³";
+  document.getElementById("zCropLoss").textContent=seg.cropLoss+"%";
+  
+  document.getElementById("zTDS").textContent = seg.tds.toFixed(0) + " mg/L";
+  document.getElementById("zFlow").textContent = seg.flowRate.toFixed(1) + " m³/s";
+  document.getElementById("zSoil").textContent = seg.soilMoisture.toFixed(1) + " %";
+  document.getElementById("zEvap").textContent = seg.evap.toFixed(1) + " мм/күн";
+
+  const labels=["-6","-5","-4","-3","-2","-1","0"];
+  const ndwiSeries=labels.map((_,i)=> clamp(seg.ndwi + 0.05*Math.sin((FLOW.tick-i)/3) + rnd(0.03), -1, 1));
+  const ndviSeries=labels.map((_,i)=> clamp(seg.ndvi + 0.04*Math.cos((FLOW.tick-i)/4) - 0.06*clamp((0.18-ndwiSeries[i])/0.28,0,1) + rnd(0.03), -1, 1));
+  if(zoneMiniChart) zoneMiniChart.destroy();
+  zoneMiniChart = new Chart(document.getElementById("zoneMiniChart"),{ type:"line", data:{labels, datasets:[{label:"NDWI", data:ndwiSeries},{label:"NDVI", data:ndviSeries}]}, options:{responsive:true} });
+}
+
+function buildDSS(){
+  const box=document.getElementById("dssBox");
+  box.innerHTML="";
+  const top=[...segments].sort((a,b)=>b.risk-a.risk).slice(0,3);
+  const actions=[];
+
+  if((window.__anomCount||0)>0) actions.push({ title: "Инспекцияға хабарлау: заңсыз су алу", meta: "Триггер: upstream деңгейі ауытқыды." });
+  top.forEach((s,idx)=>{
+    if(s.risk>=55) actions.push({ title: `Шлюзді реттеу (prio ${idx+1})`, meta: `${s.id} • ${s.missingVal.toFixed(1)} млн м³ су жеткізу керек.` });
+    if((document.getElementById("agroModeToggle").checked || document.getElementById("tglAgro").checked) && s.cropLoss>=55) 
+      actions.push({ title: "Фермерлерге ескерту", meta: `${s.id} • 🍚 Күріш шығыны ${s.cropLoss}%` });
+  });
+
+  (actions.length?actions:[{ title: "Тұрақты", meta: "Критикалық әрекет жоқ." }]).slice(0,7).forEach(a=>{
+    const div=document.createElement("div"); div.className="dssItem";
+    div.innerHTML=`<b>✅ ${escapeHtml(a.title)}</b><div class="meta">${escapeHtml(a.meta)}</div>`; box.appendChild(div);
+  });
+}
+
+function renderBalanceTab(){
+  const tbody = document.getElementById("balance-table-body");
+  tbody.innerHTML = "";
+  
+  const sorted = [...segments].sort((a,b)=> b.missingVal - a.missingVal);
+  sorted.forEach(seg => {
+    const c = riskColor(seg.risk);
+    const status = (c === "#ff4d6d") ? "Тапшылық (Қауіпті)" : (c === "#ffcc00") ? "Орташа тапшылық" : "Қалыпты (Норма)";
+    
+    tbody.innerHTML += `
+      <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+        <td style="padding:12px; font-weight:bold;">${seg.id}</td>
+        <td style="padding:12px;"><span class="riskPill" style="border-color:${c};color:${c}">${status}</span></td>
+        <td style="padding:12px;">${seg.waterNeed.toFixed(1)}</td>
+        <td style="padding:12px;">${seg.givenPct}%</td>
+        <td style="padding:12px; color:${c}; font-weight:bold;">${seg.deficitPct}%</td>
+        <td style="padding:12px; color:var(--warn); font-weight:bold;">+ ${seg.missingVal.toFixed(1)}</td>
+      </tr>
+    `;
+  });
+}
+
+function addChat(text,who){
+  const box=document.getElementById("chatBox");
+  const div=document.createElement("div"); div.className="msg "+(who==="user"?"user":"bot"); div.textContent=text;
+  box.appendChild(div); box.scrollTop=box.scrollHeight;
+}
+
+function offlineAnswer(q){
+  const text = q.toLowerCase();
+  
+  if(text.includes("сәлем") || text.includes("привет")) return "Сәлем! Мен WaterAI ассистентімін. Сырдария су балансы, аудандар немесе индекстер туралы сұрай беріңіз.";
+  if(text.includes("күріш") || text.includes("рис")) return "Қызылорда облысында судың 80%-дан астамы күріш өсіруге кетеді. NDWI және топырақ ылғалдылығы арқылы оны оңтайландыру қажет. Агро ИИ режимін қосып көріңіз.";
+  if(text.includes("ndwi")) return "NDWI (Normalized Difference Water Index) - су бетінің ауданын және ылғалдылықты спутниктен бақылауға арналған индекс. Ол 0-ден төмен болса, су тапшы деген сөз.";
+  if(text.includes("ndvi")) return "NDVI - өсімдіктердің жайқалу индексі. Күріш алқаптарының жағдайын бақылау үшін маңызды.";
+  if(text.includes("қауіп") || text.includes("проблема") || text.includes("апат")) return "Ең қауіпті аудандар (су жетпей жатқан):\n" + [...segments].sort((a,b)=>b.missingVal-a.missingVal).slice(0,3).map(s=>`• ${s.id} (Тапшылық: ${s.missingVal.toFixed(1)} млн м³)`).join("\n");
+  if(text.includes("tds") || text.includes("сапа")) return "TDS (Total Dissolved Solids) - судағы еріген тұздар мен минералдар көлемі. Қазалы сияқты төменгі ағыста тұздылық жоғары болады.";
+  if(text.includes("шешім") || text.includes("не істеу керек")) return "Оң жақтағы DSS (Decision Support System) панелін қараңыз. Сол жерде жүйе әр аудан үшін шлюздерді ашу немесе фермерлерге ескерту жіберуді автоматты түрде ұсынады.";
+  
+  if(text.includes("жаңақорған")) return "Жаңақорған ауданы – өзеннің жоғарғы ағысында орналасқан (Қызылорда облысы бойынша). Онда су деңгейі салыстырмалы түрде тұрақты.";
+  if(text.includes("шиелі")) return "Шиелі ауданында күріш көп егіледі, сондықтан судың көп бөлігі осында тұтынылады. Утечка (ағу) қаупін бақылау маңызды.";
+  if(text.includes("қызылорда")) return "Қызылорда қаласы мен Сырдария ауданында халық тығыздығы мен өнеркәсіптер суды көп қажет етеді.";
+  if(text.includes("қармақшы")) return "Қармақшы ауданында су деңгейі төмендей бастайды, транзиттік жоғалтулар көп болады.";
+  if(text.includes("қазалы")) return "Қазалы ауданы – өзеннің төменгі ағысы. Мұнда су ең аз жетеді және экологиялық қауіп өте жоғары.";
+  if(text.includes("арал")) return "Аралға баратын су мөлшері Сырдарияның төменгі ағысына (Қазалыдан кейін) тікелей байланысты. Жоғарғы жақта суды үнемдеу Аралды сақтап қалу үшін аса маңызды.";
+  
+  if(text.includes("болашақ") || text.includes("прогноз") || text.includes("болжам")) return "AI болжамы бойынша: егер суды басқару осы қалпы қалса, келесі 5 жылда Сырдариядағы су тапшылығы 15%-ға артуы мүмкін. WaterAI дәл осыны болдырмау үшін ресурстарды сандық басқаруға көмектеседі.";
+  if(text.includes("агро ии") || text.includes("agro ai")) return "Агро ИИ қауіпсіздік үшін: жүйе спутниктен NDWI/NDVI деректерін алады, қай егістікке су жетпей жатқанын анықтайды және суды дәл сол жерге бағыттауға автоматты команда (шлюздерге) береді.";
+  if(text.includes("жоба") || text.includes("инвестиция") || text.includes("стартап")) return "Бұл Water-AI Space жобасының MVP нұсқасы. Ол Қызылорда өңіріндегі су тапшылығын алдын ала ескертіп, цифрлық су балансын басқаруға арналған.";
+
+  return "Кешіріңіз, сұрағыңызды нақтылай аласыз ба? Картадан ауданды бассаңыз немесе «Су Балансы» таб-ын ашсаңыз, барлық мәлімет шығады. Сондай-ақ NDWI, Күріш, Арал немесе нақты аудан атын жазып көріңіз.";
+}
+
+function sendMessage(){
+  const input=document.getElementById("chatInput"); const txt=(input.value||"").trim(); if(!txt) return;
+  addChat(txt,"user"); input.value=""; setTimeout(() => addChat(offlineAnswer(txt),"bot"), 400);
+}
+
+function aiExplainSelected(){ if(!selectedSeg) return alert("Алдымен ауданды таңда."); addChat(`${selectedSeg.id} ауданында қажеттіліктің ${selectedSeg.deficitPct}% жетіспейді. Оны шешу үшін қосымша ${selectedSeg.missingVal.toFixed(1)} млн м³ су жіберу керек.`, "bot"); }
+function aiPlanSelected(){ buildDSS(); addChat("Оң жақтағы DSS-ті қараңыз: су жіберу және шлюзді ашу әрекеттері дайын.", "bot"); }
+let ecoScore=0; function addEcoScore(x){ ecoScore+=x; document.getElementById("ecoScore").textContent=String(ecoScore); }
+
+function downloadReport(){
+  const payload={ timestamp:new Date().toISOString(), ecoScore, districts: segments.map(s=>({id:s.id, risk:s.risk, deficitPct:s.deficitPct, missingValMCM:s.missingVal.toFixed(1)})) };
+  const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([JSON.stringify(payload,null,2)],{type:"application/json"})); a.download="water_balance_report.json"; a.click();
+}
+
+function refreshRenderOnly(){
+  renderRiverRisk(); applyAgroOverlay(); renderLeaks(); renderRanking(); detectAnomalies(); renderKPI(); buildDSS(); renderBalanceTab(); updateCharts();
+}
+function refreshAll(){
+  FLOW.tick+=1; generateSegmentMetrics(); refreshRenderOnly(); triggerAlerts();
+  if(selectedSeg){ const s=segments.find(x=>x.id===selectedSeg.id); if(s){ selectedSeg=s; renderZoneDetails(s); } }
+}
+
+function triggerUpstreamShock(){ FLOW.impulses.push({t0:FLOW.tick, magnitude:0.55}); addChat("⚡ Upstream соққы жасалды. Төменде деңгей өзгереді.", "bot"); addEcoScore(10); refreshAll(); }
+
+function switchTab(tab,btn){
+  document.querySelectorAll('.grid-row').forEach(el=>el.style.display='none');
+  document.getElementById('tab-'+tab).style.display='grid';
+  document.querySelectorAll('.nav button').forEach(b=>b.classList.remove('active'));
+  if(btn) btn.classList.add('active');
+  if(tab==='map') setTimeout(()=>map.invalidateSize(),120);
+}
+
+// ЖАҢА ФУНКЦИЯ: Калькулятор логикасы
+function runCalculator() {
+  const area = parseFloat(document.getElementById("calcArea").value);
+  const norm = parseFloat(document.getElementById("calcNorm").value);
+  
+  if(isNaN(area) || isNaN(norm) || area <= 0 || norm <= 0) {
+    alert("Мәндерді дұрыс енгізіңіз!");
+    return;
+  }
+  
+  const totalM3 = area * norm;
+  const totalMCM = (totalM3 / 1000000).toFixed(2);
+  
+  const res = document.getElementById("calcResult");
+  res.style.display = "block";
+  res.innerHTML = `Қажетті жалпы су көлемі:<br>
+    <span style="font-size:28px; color:var(--ok)">${totalMCM} млн м³</span><br>
+    <span style="font-size:13px; color:var(--muted)">(${totalM3.toLocaleString('ru-RU')} м³)</span>`;
+}
+
+window.onload=()=>{ setLang("kk"); initMap(); initCompare(); };
+</script>
+</body>
+</html>
